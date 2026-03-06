@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM API Tester</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+  </style>
+</head>
+<body class="bg-gray-50" x-data="app()" x-init="init()">
+  
+  <!-- Header -->
+  <header class="bg-white shadow-sm border-b">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+      <h1 class="text-2xl font-bold text-gray-900">LLM API Tester</h1>
+      <div class="flex gap-2">
+        <button @click="exportChannels()" class="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded">导出配置</button>
+        <button @click="showImportDialog = true" class="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded">导入配置</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Layout -->
+  <div class="max-w-7xl mx-auto px-4 py-6 flex gap-6">
+    
+    <!-- Sidebar: Channel List -->
+    <aside class="w-64 flex-shrink-0">
+      <div class="bg-white rounded-lg shadow p-4">
+        <button @click="showCreateDialog = true" class="w-full mb-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+          + 新建渠道
+        </button>
+        
+        <div class="space-y-2">
+          <template x-for="channel in channels" :key="channel.id">
+            <div 
+              @click="selectChannel(channel.id)"
+              :class="selectedChannelId === channel.id ? 'bg-blue-50 border-blue-500' : 'bg-gray-50 border-gray-200'"
+              class="p-3 rounded border cursor-pointer hover:border-blue-400 transition"
+            >
+              <div class="flex items-center justify-between">
+                <span class="font-medium text-sm" x-text="channel.name"></span>
+                <span 
+                  :class="{
+                    'bg-green-100 text-green-800': channel.status === 'available',
+                    'bg-red-100 text-red-800': channel.status === 'unavailable',
+                    'bg-gray-100 text-gray-600': channel.status === 'untested'
+                  }"
+                  class="text-xs px-2 py-0.5 rounded"
+                  x-text="channel.status === 'available' ? '✓' : channel.status === 'unavailable' ? '✗' : '?'"
+                ></span>
+              </div>
+              <div class="text-xs text-gray-500 mt-1 truncate" x-text="channel.base_url"></div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1">
+      
+      <!-- No Channel Selected -->
+      <div x-show="!selectedChannelId" class="bg-white rounded-lg shadow p-8 text-center text-gray-500">
+        <p>请选择或创建一个渠道</p>
+      </div>
+
+      <!-- Channel Details -->
+      <div x-show="selectedChannelId" x-cloak>
+        
+        <!-- Status Card -->
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+          <div class="flex justify-between items-start mb-4">
+            <div>
+              <h2 class="text-xl font-bold" x-text="selectedChannel?.name"></h2>
+              <p class="text-sm text-gray-500" x-text="selectedChannel?.base_url"></p>
+            </div>
+            <div class="flex gap-2">
+              <button @click="validateChannel()" :disabled="validating" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
+                <span x-show="!validating">验证</span>
+                <span x-show="validating">验证中...</span>
+              </button>
+              <button @click="editChannel()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded">编辑</button>
+              <button @click="deleteChannel()" class="px-4 py-2 bg-red-100 text-red-700 hover:bg-red-200 rounded">删除</button>
+            </div>
+          </div>
+
+          <template x-if="selectedChannel?.status === 'available'">
+            <div class="p-4 bg-green-50 rounded space-y-3">
+              <div class="grid grid-cols-3 gap-4">
+                <div>
+                  <div class="text-xs text-gray-600">协议类型</div>
+                  <div class="font-medium" x-text="selectedChannel.effective_protocol || selectedChannel.detected_protocol || selectedChannel.protocol"></div>
+                  <div class="text-xs text-gray-500 mt-1" x-show="selectedChannel.detected_protocol">
+                    自动检测: <span x-text="selectedChannel.detected_protocol"></span>
+                  </div>
+                </div>
+                <div>
+                  <div class="text-xs text-gray-600">延迟</div>
+                  <div class="font-medium" x-text="selectedChannel.latency_ms + ' ms'"></div>
+                </div>
+                <div>
+                  <div class="text-xs text-gray-600">API 类型</div>
+                  <div class="font-medium" x-text="selectedChannel.effective_api_type || 'chat'"></div>
+                </div>
+              </div>
+              
+              <div class="border-t pt-3">
+                <div class="text-xs text-gray-600 mb-2">模型列表来源：</div>
+                <div class="flex gap-2">
+                  <button @click="switchModelsProtocol('openai-compatible')" :class="selectedChannel.models_protocol_display === 'openai-compatible' ? 'bg-blue-600 text-white' : 'bg-white border'" class="px-3 py-1 text-xs rounded hover:bg-blue-50">OpenAI 通用</button>
+                  <button @click="switchModelsProtocol('openai')" :class="selectedChannel.models_protocol_display === 'openai' ? 'bg-blue-600 text-white' : 'bg-white border'" class="px-3 py-1 text-xs rounded hover:bg-blue-50">OpenAI</button>
+                  <button @click="switchModelsProtocol('anthropic')" :class="selectedChannel.models_protocol_display === 'anthropic' ? 'bg-blue-600 text-white' : 'bg-white border'" class="px-3 py-1 text-xs rounded hover:bg-blue-50">Anthropic</button>
+                </div>
+              </div>
+
+              <div class="border-t pt-3">
+                <div class="text-xs text-gray-600 mb-2">对话/测试协议：</div>
+                <div class="flex gap-2">
+                  <button @click="switchProtocol('openai')" :class="selectedChannel.effective_protocol === 'openai' ? 'bg-blue-600 text-white' : 'bg-white border'" class="px-3 py-1 text-xs rounded hover:bg-blue-50">OpenAI</button>
+                  <button @click="switchProtocol('anthropic')" :class="selectedChannel.effective_protocol === 'anthropic' ? 'bg-blue-600 text-white' : 'bg-white border'" class="px-3 py-1 text-xs rounded hover:bg-blue-50">Anthropic</button>
+                  <button @click="switchProtocol('openai-compatible')" :class="selectedChannel.effective_protocol === 'openai-compatible' ? 'bg-blue-600 text-white' : 'bg-white border'" class="px-3 py-1 text-xs rounded hover:bg-blue-50">OpenAI 通用</button>
+                </div>
+              </div>
+
+              <div class="border-t pt-3">
+                <div class="text-xs text-gray-600 mb-2">手动切换 API 类型（针对中继渠道）：</div>
+                <div class="flex gap-2">
+                  <button @click="switchApiType('chat')" :class="selectedChannel.effective_api_type === 'chat' ? 'bg-green-600 text-white' : 'bg-white border'" class="px-3 py-1 text-xs rounded hover:bg-green-50">/v1/chat/completions</button>
+                  <button @click="switchApiType('responses')" :class="selectedChannel.effective_api_type === 'responses' ? 'bg-green-600 text-white' : 'bg-white border'" class="px-3 py-1 text-xs rounded hover:bg-green-50">/responses</button>
+                </div>
+              </div>
+
+              <div class="border-t pt-3">
+                <div class="text-xs text-gray-600 mb-2">自定义端点路径（留空使用默认）：</div>
+                <div class="flex gap-2">
+                  <input 
+                    type="text" 
+                    :value="selectedChannel.custom_endpoint || ''" 
+                    @blur="updateCustomEndpoint($event.target.value)"
+                    placeholder="例如: /chat/completions 或 /v1/chat/completions"
+                    class="flex-1 px-3 py-1 text-xs border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                  <button @click="clearCustomEndpoint()" class="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded">清除</button>
+                </div>
+                <div class="text-xs text-gray-400 mt-1">提示：如果中继渠道不用 /v1 前缀，可以填 /chat/completions</div>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Models List -->
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold">模型列表</h3>
+            <div class="flex gap-2">
+              <button @click="loadModels()" :disabled="loadingModels" class="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded disabled:opacity-50">
+                <span x-show="!loadingModels">刷新</span>
+                <span x-show="loadingModels">加载中...</span>
+              </button>
+              <button @click="batchTestModels()" :disabled="batchTesting || models.length === 0" class="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
+                批量测试
+              </button>
+            </div>
+          </div>
+
+          <!-- Manual Model Input -->
+          <div class="mb-4 p-3 bg-gray-50 rounded border">
+            <div class="text-xs text-gray-600 mb-2">手动输入模型名称（用于中继渠道或自定义模型）：</div>
+            <div class="flex gap-2">
+              <input 
+                type="text" 
+                x-model="manualModelName" 
+                placeholder="例如: gpt-4, claude-3-5-sonnet-20241022"
+                class="flex-1 px-3 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+              <button @click="addManualModel()" :disabled="!manualModelName.trim()" class="px-4 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
+                添加
+              </button>
+            </div>
+          </div>
+
+          <div x-show="models.length === 0" class="text-center text-gray-500 py-8">
+            <p>暂无模型，请先验证渠道或手动添加模型</p>
+          </div>
+
+          <div x-show="models.length > 0" class="overflow-auto max-h-96">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50 sticky top-0">
+                <tr>
+                  <th class="text-left p-2">模型名称</th>
+                  <th class="text-center p-2 w-24">状态</th>
+                  <th class="text-center p-2 w-24">延迟</th>
+                  <th class="text-right p-2 w-32">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="model in models" :key="model.name">
+                  <tr class="border-t hover:bg-gray-50">
+                    <td class="p-2 font-mono text-xs" x-text="model.name"></td>
+                    <td class="p-2 text-center">
+                      <span 
+                        :class="{
+                          'bg-green-100 text-green-800': model.status === 'available',
+                          'bg-red-100 text-red-800': model.status === 'unavailable',
+                          'bg-gray-100 text-gray-600': model.status === 'untested'
+                        }"
+                        class="text-xs px-2 py-0.5 rounded"
+                        x-text="model.status === 'available' ? '✓' : model.status === 'unavailable' ? '✗' : '?'"
+                      ></span>
+                    </td>
+                    <td class="p-2 text-center text-xs" x-text="model.latency ? model.latency + 'ms' : '-'"></td>
+                    <td class="p-2 text-right">
+                      <button @click="testModel(model.name)" class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded mr-1">测试</button>
+                      <button @click="startChat(model.name)" class="text-xs px-2 py-1 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded">对话</button>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Chat Interface -->
+        <div x-show="chatModel" x-cloak class="bg-white rounded-lg shadow p-6 mb-6">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold">对话测试: <span class="font-mono text-sm" x-text="chatModel"></span></h3>
+            <button @click="closeChat()" class="text-gray-500 hover:text-gray-700">✕</button>
+          </div>
+
+          <div class="mb-4 flex gap-4 text-sm">
+            <label class="flex items-center gap-2">
+              Temperature:
+              <input type="number" x-model="chatConfig.temperature" min="0" max="2" step="0.1" class="w-20 px-2 py-1 border rounded">
+            </label>
+            <label class="flex items-center gap-2">
+              Max Tokens:
+              <input type="number" x-model="chatConfig.maxTokens" min="100" max="4000" step="100" class="w-24 px-2 py-1 border rounded">
+            </label>
+            <label class="flex items-center gap-2">
+              <input type="checkbox" x-model="chatConfig.stream" class="w-4 h-4">
+              流式输出
+            </label>
+          </div>
+
+          <div class="border rounded-lg p-4 h-96 overflow-y-auto mb-4 bg-gray-50">
+            <template x-for="(msg, idx) in chatMessages" :key="idx">
+              <div :class="msg.role === 'user' ? 'text-right' : 'text-left'" class="mb-3">
+                <div 
+                  :class="msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white border'"
+                  class="inline-block px-4 py-2 rounded-lg max-w-2xl text-left"
+                >
+                  <div class="text-xs opacity-70 mb-1" x-text="msg.role"></div>
+                  <div class="whitespace-pre-wrap" x-text="msg.content"></div>
+                </div>
+              </div>
+            </template>
+            <div x-show="chatStreaming" class="text-left mb-3">
+              <div class="inline-block px-4 py-2 rounded-lg bg-white border">
+                <div class="text-xs opacity-70 mb-1">assistant</div>
+                <div class="whitespace-pre-wrap" x-text="chatStreamBuffer"></div>
+                <span class="inline-block w-2 h-4 bg-gray-400 animate-pulse ml-1"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex gap-2">
+            <input 
+              type="text" 
+              x-model="chatInput" 
+              @keydown.enter="sendMessage()"
+              :disabled="chatStreaming"
+              placeholder="输入消息..."
+              class="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+            <button 
+              @click="sendMessage()" 
+              :disabled="chatStreaming || !chatInput.trim()"
+              class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              发送
+            </button>
+          </div>
+        </div>
+
+        <!-- Debug Log Panel -->
+        <div x-show="selectedChannelId" x-cloak class="bg-white rounded-lg shadow p-6">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold">请求日志</h3>
+            <div class="flex gap-2">
+              <button @click="loadLogs()" class="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded">刷新</button>
+              <button @click="clearLogs()" class="px-4 py-2 text-sm bg-red-100 text-red-700 hover:bg-red-200 rounded">清除</button>
+            </div>
+          </div>
+
+          <div x-show="requestLogs.length === 0" class="text-center text-gray-500 py-4">
+            <p>暂无日志，发送对话或测试模型后会记录请求详情</p>
+          </div>
+
+          <div x-show="requestLogs.length > 0" class="space-y-3 max-h-96 overflow-y-auto">
+            <template x-for="(log, idx) in requestLogs" :key="log.id">
+              <div class="border rounded p-3 text-xs font-mono bg-gray-50">
+                <div class="flex justify-between items-center mb-2">
+                  <span class="font-sans font-medium text-sm" x-text="log.request_type + ' → ' + (log.model_name || '')"></span>
+                  <span class="text-gray-400 font-sans" x-text="log.created_at"></span>
+                </div>
+                <div class="mb-1"><span class="text-gray-500">URL:</span> <span class="text-blue-700" x-text="log.request_url"></span></div>
+                <div class="mb-1">
+                  <span class="text-gray-500">Request Body:</span>
+                  <pre class="mt-1 p-2 bg-white border rounded overflow-x-auto whitespace-pre-wrap" x-text="formatJson(log.request_body)"></pre>
+                </div>
+                <template x-if="log.response_status">
+                  <div class="mb-1">
+                    <span class="text-gray-500">Response:</span>
+                    <span :class="log.response_status < 400 ? 'text-green-700' : 'text-red-700'" x-text="'HTTP ' + log.response_status"></span>
+                    <pre class="mt-1 p-2 bg-white border rounded overflow-x-auto whitespace-pre-wrap max-h-40" x-text="formatJson(log.response_body)"></pre>
+                  </div>
+                </template>
+                <template x-if="log.error_message">
+                  <div class="text-red-600"><span class="text-gray-500">Error:</span> <span x-text="log.error_message"></span></div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Create/Edit Channel Dialog -->
+  <div x-show="showCreateDialog || showEditDialog" x-cloak class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="showCreateDialog = false; showEditDialog = false">
+    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+      <h3 class="text-lg font-bold mb-4" x-text="showEditDialog ? '编辑渠道' : '新建渠道'"></h3>
+      
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-1">名称</label>
+          <input type="text" x-model="channelForm.name" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium mb-1">Base URL</label>
+          <input type="text" x-model="channelForm.baseUrl" placeholder="https://api.openai.com" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium mb-1">API Key</label>
+          <input type="password" x-model="channelForm.apiKey" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium mb-1">协议类型</label>
+          <select x-model="channelForm.protocol" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="auto">自动检测</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="openai-compatible">OpenAI 通用</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 mt-6">
+        <button @click="showCreateDialog = false; showEditDialog = false" class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded">取消</button>
+        <button @click="saveChannel()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import Dialog -->
+  <div x-show="showImportDialog" x-cloak class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="showImportDialog = false">
+    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+      <h3 class="text-lg font-bold mb-4">导入配置</h3>
+      <textarea x-model="importData" rows="10" placeholder="粘贴 JSON 配置..." class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"></textarea>
+      <div class="flex justify-end gap-2 mt-4">
+        <button @click="showImportDialog = false" class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded">取消</button>
+        <button @click="importChannels()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">导入</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function app() {
+      return {
+        channels: [],
+        selectedChannelId: null,
+        models: [],
+        validating: false,
+        loadingModels: false,
+        batchTesting: false,
+        manualModelName: '',
+        requestLogs: [],
+
+        showCreateDialog: false,
+        showEditDialog: false,
+        showImportDialog: false,
+        importData: '',
+
+        channelForm: { name: '', baseUrl: '', apiKey: '', protocol: 'auto' },
+
+        chatModel: null,
+        chatMessages: [],
+        chatInput: '',
+        chatStreaming: false,
+        chatStreamBuffer: '',
+        chatConfig: { temperature: 0.7, maxTokens: 1000, stream: true },
+
+        get selectedChannel() {
+          return this.channels.find(c => c.id === this.selectedChannelId);
+        },
+
+        async init() {
+          await this.loadChannels();
+        },
+
+        async loadChannels() {
+          const res = await fetch('/api/channels');
+          this.channels = await res.json();
+        },
+
+        async selectChannel(id) {
+          this.selectedChannelId = id;
+          this.chatModel = null;
+          this.chatMessages = [];
+          this.models = [];
+          this.requestLogs = [];
+          if (this.selectedChannel?.status === 'available') {
+            await this.loadModels();
+          }
+          await this.loadLogs();
+        },
+
+        async saveChannel() {
+          if (this.showEditDialog) {
+            await fetch(`/api/channels/${this.selectedChannelId}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(this.channelForm)
+            });
+            this.showEditDialog = false;
+          } else {
+            const res = await fetch('/api/channels', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(this.channelForm)
+            });
+            const data = await res.json();
+            this.showCreateDialog = false;
+            this.selectedChannelId = data.id;
+          }
+          this.channelForm = { name: '', baseUrl: '', apiKey: '', protocol: 'auto' };
+          await this.loadChannels();
+        },
+
+        editChannel() {
+          const ch = this.selectedChannel;
+          this.channelForm = {
+            name: ch.name,
+            baseUrl: ch.base_url,
+            apiKey: '',
+            protocol: ch.protocol
+          };
+          this.showEditDialog = true;
+        },
+
+        async deleteChannel() {
+          if (!confirm('确定删除此渠道？')) return;
+          await fetch(`/api/channels/${this.selectedChannelId}`, { method: 'DELETE' });
+          this.selectedChannelId = null;
+          this.models = [];
+          await this.loadChannels();
+        },
+
+        async validateChannel() {
+          this.validating = true;
+          try {
+            const res = await fetch(`/api/channels/${this.selectedChannelId}/validate`, { method: 'POST' });
+            const data = await res.json();
+            await this.loadChannels();
+            if (data.success) {
+              await this.loadModels();
+            } else {
+              alert('验证失败: ' + (data.error || '未知错误'));
+            }
+          } catch (e) {
+            alert('验证出错: ' + e.message);
+          } finally {
+            this.validating = false;
+          }
+        },
+
+        async switchProtocol(protocol) {
+          try {
+            await fetch(`/api/channels/${this.selectedChannelId}/switch-protocol`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ protocol })
+            });
+            await this.loadChannels();
+          } catch (e) {
+            alert('切换协议失败: ' + e.message);
+          }
+        },
+
+        async switchModelsProtocol(protocol) {
+          try {
+            await fetch(`/api/channels/${this.selectedChannelId}/switch-models-protocol`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ protocol })
+            });
+            await this.loadChannels();
+            this.models = [];
+            await this.loadModels();
+          } catch (e) {
+            alert('切换模型列表来源失败: ' + e.message);
+          }
+        },
+
+        async switchApiType(apiType) {
+          try {
+            await fetch(`/api/channels/${this.selectedChannelId}/switch-api-type`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ apiType })
+            });
+            await this.loadChannels();
+          } catch (e) {
+            alert('切换 API 类型失败: ' + e.message);
+          }
+        },
+
+        async updateCustomEndpoint(endpoint) {
+          try {
+            await fetch(`/api/channels/${this.selectedChannelId}/set-custom-endpoint`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ endpoint: endpoint.trim() })
+            });
+            await this.loadChannels();
+          } catch (e) {
+            alert('设置自定义端点失败: ' + e.message);
+          }
+        },
+
+        async clearCustomEndpoint() {
+          try {
+            await fetch(`/api/channels/${this.selectedChannelId}/set-custom-endpoint`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ endpoint: '' })
+            });
+            await this.loadChannels();
+          } catch (e) {
+            alert('清除自定义端点失败: ' + e.message);
+          }
+        },
+
+        async loadModels() {
+          this.loadingModels = true;
+          try {
+            const res = await fetch(`/api/channels/${this.selectedChannelId}/models`);
+            this.models = await res.json();
+          } catch (e) {
+            console.error('Failed to load models:', e);
+          } finally {
+            this.loadingModels = false;
+          }
+        },
+
+        addManualModel() {
+          const name = this.manualModelName.trim();
+          if (!name) return;
+          
+          if (!this.models.find(m => m.name === name)) {
+            this.models.push({
+              name,
+              status: 'untested',
+              latency: null,
+              error: null
+            });
+          }
+          this.manualModelName = '';
+        },
+
+        async testModel(modelName) {
+          const model = this.models.find(m => m.name === modelName);
+          if (model) model.status = 'testing';
+
+          try {
+            const res = await fetch(`/api/channels/${this.selectedChannelId}/models/${encodeURIComponent(modelName)}/test`, { method: 'POST' });
+            const data = await res.json();
+            await this.loadModels();
+          } catch (e) {
+            console.error('Test failed:', e);
+          }
+        },
+
+        async batchTestModels() {
+          this.batchTesting = true;
+          for (const model of this.models) {
+            if (model.status !== 'available') {
+              await this.testModel(model.name);
+            }
+          }
+          this.batchTesting = false;
+        },
+
+        startChat(modelName) {
+          this.chatModel = modelName;
+          this.chatMessages = [];
+          this.chatInput = '';
+          this.chatStreamBuffer = '';
+        },
+
+        closeChat() {
+          this.chatModel = null;
+          this.chatMessages = [];
+        },
+
+        async sendMessage() {
+          const content = this.chatInput.trim();
+          if (!content || this.chatStreaming) return;
+
+          this.chatMessages.push({ role: 'user', content });
+          this.chatInput = '';
+          this.chatStreaming = true;
+          this.chatStreamBuffer = '';
+
+          try {
+            const res = await fetch('/api/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                channelId: this.selectedChannelId,
+                model: this.chatModel,
+                messages: this.chatMessages.map(m => ({ role: m.role, content: m.content })),
+                temperature: parseFloat(this.chatConfig.temperature),
+                maxTokens: parseInt(this.chatConfig.maxTokens),
+                stream: this.chatConfig.stream
+              })
+            });
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              const chunk = decoder.decode(value);
+              const lines = chunk.split('\n').filter(l => l.startsWith('data:'));
+
+              for (const line of lines) {
+                try {
+                  const data = JSON.parse(line.slice(5).trim());
+                  if (data.content) {
+                    this.chatStreamBuffer += data.content;
+                  }
+                  if (data.error) {
+                    this.chatStreamBuffer += '\n[Error: ' + data.error + ']';
+                  }
+                } catch (e) {}
+              }
+            }
+
+            if (this.chatStreamBuffer) {
+              this.chatMessages.push({ role: 'assistant', content: this.chatStreamBuffer });
+            }
+          } catch (e) {
+            this.chatMessages.push({ role: 'assistant', content: '[Error: ' + e.message + ']' });
+          } finally {
+            this.chatStreaming = false;
+            this.chatStreamBuffer = '';
+            await this.loadLogs();
+          }
+        },
+
+        async exportChannels() {
+          const res = await fetch('/api/channels');
+          const channels = await res.json();
+          const exportData = channels.map(c => ({
+            name: c.name,
+            base_url: c.base_url,
+            protocol: c.protocol,
+            api_key: '*** FILL YOUR KEY ***'
+          }));
+          const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'llm-channels.json';
+          a.click();
+          URL.revokeObjectURL(url);
+        },
+
+        async importChannels() {
+          try {
+            const data = JSON.parse(this.importData);
+            const items = Array.isArray(data) ? data : [data];
+            for (const item of items) {
+              if (!item.name || !item.base_url || !item.api_key || item.api_key === '*** FILL YOUR KEY ***') {
+                alert('请填写完整的配置信息（包括 API Key）');
+                return;
+              }
+              await fetch('/api/channels', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: item.name,
+                  baseUrl: item.base_url,
+                  apiKey: item.api_key,
+                  protocol: item.protocol || 'auto'
+                })
+              });
+            }
+            this.showImportDialog = false;
+            this.importData = '';
+            await this.loadChannels();
+          } catch (e) {
+            alert('JSON 格式错误: ' + e.message);
+          }
+        },
+
+        async loadLogs() {
+          if (!this.selectedChannelId) return;
+          try {
+            const res = await fetch(`/api/channels/${this.selectedChannelId}/logs?limit=20`);
+            this.requestLogs = await res.json();
+          } catch (e) {
+            console.error('Failed to load logs:', e);
+          }
+        },
+
+        async clearLogs() {
+          if (!confirm('确定清除所有日志？')) return;
+          try {
+            await fetch(`/api/channels/${this.selectedChannelId}/logs`, { method: 'DELETE' });
+            this.requestLogs = [];
+          } catch (e) {
+            alert('清除日志失败: ' + e.message);
+          }
+        },
+
+        formatJson(str) {
+          if (!str) return '';
+          try {
+            return JSON.stringify(JSON.parse(str), null, 2);
+          } catch (e) {
+            return str;
+          }
+        }
+      };
+    }
+  </script>
+
+</body>
+</html>

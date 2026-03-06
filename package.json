@@ -1,0 +1,16 @@
+{
+  "name": "llm-tester",
+  "version": "1.0.0",
+  "description": "轻量级 LLM API 渠道测试工具",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.0",
+    "hono": "^4.6.0",
+    "better-sqlite3": "^11.7.0"
+  }
+}
