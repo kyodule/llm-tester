@@ -1,5 +1,29 @@
 # 更新日志
 
+## 2026-03-06 v4 - 增强自动检测和多协议兼容能力
+
+### 核心改进
+
+1. **Base URL 智能处理**
+   - 新增 `buildUrl` 函数，自动处理 `/v1` 重复拼接问题
+   - 用户填写 Base URL 时带不带 `/v1` 均可，系统自动适配
+   - 彻底解决 `/v1/v1/models` 等路径拼接错误
+
+2. **Gemini 原生协议支持**
+   - 注册 Gemini provider，支持 Google Gemini 原生 API
+   - 自动检测流程加入 Gemini（OpenAI → Anthropic → Gemini）
+   - 前端协议选择器、创建对话框均加入 Gemini 选项
+
+3. **验证能力增强**
+   - `/v1/models` 不可用时，自动 fallback 到 Chat Completions 端点验证
+   - `detectCapabilities` 不再硬编码 `gpt-3.5-turbo`，改用通用占位模型名
+   - 400/401/404 状态码均视为端点存在（只是参数/模型/认证问题）
+
+4. **Responses API 端点修正**
+   - 默认端点从 `/responses` 修正为 `/v1/responses`，与 NewAPI 等中继站对齐
+
+---
+
 ## 2026-03-05 v3 - 拆分模型列表来源和对话协议
 
 ### 核心改进

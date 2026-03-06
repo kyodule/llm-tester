@@ -13,8 +13,10 @@
 - **模型测试** — 逐个测试模型可用性和响应延迟
 - **交互式对话** — 选择模型直接对话，支持流式/非流式输出
 - **请求日志** — 完整记录请求 URL、Body、响应状态，方便调试
-- **多协议支持** — OpenAI / Anthropic / OpenAI 兼容（中继渠道通用）
-- **双格式兼容** — 同时支持 Chat Completions (`/v1/chat/completions`) 和 Responses API (`/responses`) 两种请求格式
+- **多协议支持** — OpenAI / Anthropic / Gemini / OpenAI 兼容（中继渠道通用）
+- **智能 URL 处理** — Base URL 带不带 `/v1` 均可，系统自动处理拼接
+- **增强验证** — `/v1/models` 不可用时自动 fallback 到 Chat Completions 端点验证
+- **双格式兼容** — 同时支持 Chat Completions (`/v1/chat/completions`) 和 Responses API (`/v1/responses`) 两种请求格式
 - **独立配置** — 模型列表来源和对话协议可分别设置，适配中继渠道混合路由场景
 
 ## 快速开始
@@ -56,7 +58,7 @@ npm start
 
 点击「新建渠道」，填写：
 - **名称** — 渠道标识（如 "sub2api-主力"）
-- **Base URL** — 渠道地址（如 `https://api.example.com`，不带 `/v1`）
+- **Base URL** — 渠道地址（如 `https://api.example.com`，带不带 `/v1` 均可）
 - **API Key** — 渠道密钥（本地 AES-256-CBC 加密存储）
 
 保存后自动检测连通性和协议类型。
@@ -65,7 +67,7 @@ npm start
 
 对于中继渠道（newapi、sub2api 等），可能需要手动配置：
 
-- **提供商** — 选择 OpenAI / Anthropic / OpenAI 兼容
+- **提供商** — 选择 OpenAI / Anthropic / Gemini / OpenAI 兼容
 - **模型列表来源** — 获取模型列表时使用的协议（通常是 OpenAI 兼容）
 - **对话协议** — 实际对话时使用的协议（取决于上游模型）
 - **支持能力** — Chat Completions 或 Responses API
@@ -94,10 +96,11 @@ llm-tester/
 ├── public/index.html          # 单文件 SPA 前端
 ├── src/
 │   ├── db.js                  # SQLite 数据库 + API Key 加密
-│   ├── utils.js               # 工具函数
+│   ├── utils.js               # 工具函数（URL 智能拼接等）
 │   ├── providers/
 │   │   ├── openai.js          # OpenAI / 兼容协议（含 Responses API）
 │   │   ├── anthropic.js       # Anthropic Claude 协议
+│   │   ├── gemini.js          # Google Gemini 原生协议
 │   │   └── index.js           # 协议注册与自动检测
 │   └── routes/
 │       ├── channels.js        # 渠道 CRUD + 验证 + 模型 + 测试
