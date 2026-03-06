@@ -131,7 +131,7 @@
                 <div class="text-xs text-gray-600 mb-2">手动切换 API 类型（针对中继渠道）：</div>
                 <div class="flex gap-2">
                   <button @click="switchApiType('chat')" :class="selectedChannel.effective_api_type === 'chat' ? 'bg-green-600 text-white' : 'bg-white border'" class="px-3 py-1 text-xs rounded hover:bg-green-50">/v1/chat/completions</button>
-                  <button @click="switchApiType('responses')" :class="selectedChannel.effective_api_type === 'responses' ? 'bg-green-600 text-white' : 'bg-white border'" class="px-3 py-1 text-xs rounded hover:bg-green-50">/responses</button>
+                  <button @click="switchApiType('responses')" :class="selectedChannel.effective_api_type === 'responses' ? 'bg-green-600 text-white' : 'bg-white border'" class="px-3 py-1 text-xs rounded hover:bg-green-50">/v1/responses</button>
                 </div>
               </div>
 
