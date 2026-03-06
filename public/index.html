@@ -570,17 +570,18 @@
           }
         },
 
-        addManualModel() {
+        async addManualModel() {
           const name = this.manualModelName.trim();
           if (!name) return;
           
           if (!this.models.find(m => m.name === name)) {
-            this.models.push({
-              name,
-              status: 'untested',
-              latency: null,
-              error: null
+            // Persist to backend so it survives loadModels() refresh
+            await fetch(`/api/channels/${this.selectedChannelId}/models`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ model: name })
             });
+            await this.loadModels();
           }
           this.manualModelName = '';
         },

@@ -168,23 +168,49 @@ channels.get('/:id/models', async (c) => {
   const protocol = getModelsProtocol(channel);  // 使用模型列表专用协议
   const provider = getProvider(protocol);
 
-  try {
-    const models = await provider.listModels(channel.base_url, apiKey);
-    
-    const tests = db.prepare('SELECT model_name, status, latency_ms, error_message FROM model_tests WHERE channel_id = ?')
-      .all(id);
-    
-    const testMap = Object.fromEntries(tests.map(t => [t.model_name, t]));
+  const tests = db.prepare('SELECT model_name, status, latency_ms, error_message FROM model_tests WHERE channel_id = ?')
+    .all(id);
+  const testMap = Object.fromEntries(tests.map(t => [t.model_name, t]));
 
-    return c.json(models.map(name => ({
-      name,
-      status: testMap[name]?.status || 'untested',
-      latency: testMap[name]?.latency_ms,
-      error: testMap[name]?.error_message
-    })));
+  let apiModels = [];
+  try {
+    apiModels = await provider.listModels(channel.base_url, apiKey);
   } catch (error) {
-    return c.json({ error: error.message }, 500);
+    // listModels failed (e.g. channel doesn't support /v1/models), fall back to model_tests only
   }
+
+  const seen = new Set(apiModels);
+  // Merge models from model_tests that aren't in the API response
+  for (const t of tests) {
+    if (!seen.has(t.model_name)) {
+      apiModels.push(t.model_name);
+    }
+  }
+
+  return c.json(apiModels.map(name => ({
+    name,
+    status: testMap[name]?.status || 'untested',
+    latency: testMap[name]?.latency_ms,
+    error: testMap[name]?.error_message
+  })));
+});
+
+// 手动添加模型（持久化到 model_tests 表）
+channels.post('/:id/models', async (c) => {
+  const id = c.req.param('id');
+  const { model } = await c.req.json();
+
+  if (!model || !model.trim()) {
+    return c.json({ error: 'Model name is required' }, 400);
+  }
+
+  db.prepare(`
+    INSERT INTO model_tests (channel_id, model_name, status)
+    VALUES (?, ?, 'untested')
+    ON CONFLICT(channel_id, model_name) DO NOTHING
+  `).run(id, model.trim());
+
+  return c.json({ success: true });
 });
 
 channels.post('/:id/models/:model/test', async (c) => {
