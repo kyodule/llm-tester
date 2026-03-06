@@ -253,7 +253,7 @@ channels.post('/:id/switch-protocol', async (c) => {
   const id = c.req.param('id');
   const { protocol } = await c.req.json();
 
-  if (!['openai', 'anthropic', 'openai-compatible'].includes(protocol)) {
+  if (!['openai', 'anthropic', 'openai-compatible', 'gemini'].includes(protocol)) {
     return c.json({ error: 'Invalid protocol' }, 400);
   }
 
@@ -268,7 +268,7 @@ channels.post('/:id/switch-models-protocol', async (c) => {
   const id = c.req.param('id');
   const { protocol } = await c.req.json();
 
-  if (!['openai', 'anthropic', 'openai-compatible'].includes(protocol)) {
+  if (!['openai', 'anthropic', 'openai-compatible', 'gemini'].includes(protocol)) {
     return c.json({ error: 'Invalid protocol' }, 400);
   }
 

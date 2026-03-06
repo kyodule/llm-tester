@@ -1,4 +1,4 @@
-import { fetchWithTimeout, measureLatency } from '../utils.js';
+import { fetchWithTimeout, measureLatency, buildUrl } from '../utils.js';
 
 // 判断是否为 Responses API 端点
 function isResponsesEndpoint(endpoint) {
@@ -95,11 +95,35 @@ export const OpenAIProvider = {
   async validate(baseUrl, apiKey) {
     const startTime = Date.now();
     try {
-      const response = await fetchWithTimeout(`${baseUrl}/v1/models`, {
+      // 先尝试 /v1/models
+      let url = buildUrl(baseUrl, '/v1/models');
+      let response = await fetchWithTimeout(url, {
         headers: { 'Authorization': `Bearer ${apiKey}` }
       });
       
+      // 如果 /v1/models 返回 404/HTML，尝试直接发 chat completions 请求验证
       if (!response.ok) {
+        const fallbackUrl = buildUrl(baseUrl, '/v1/chat/completions');
+        const fallbackRes = await fetchWithTimeout(fallbackUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'gpt-3.5-turbo',
+            messages: [{ role: 'user', content: 'hi' }],
+            max_tokens: 1
+          })
+        }, 10000);
+        // 400 也算通过（说明端点存在，只是参数/模型不对）
+        if (fallbackRes.ok || fallbackRes.status === 400 || fallbackRes.status === 401) {
+          return {
+            success: true,
+            latency: measureLatency(startTime),
+            note: '/v1/models unavailable, validated via chat completions'
+          };
+        }
         return {
           success: false,
           error: `HTTP ${response.status}: ${response.statusText}`,
@@ -122,7 +146,7 @@ export const OpenAIProvider = {
 
   async listModels(baseUrl, apiKey) {
     try {
-      const response = await fetchWithTimeout(`${baseUrl}/v1/models`, {
+      const response = await fetchWithTimeout(buildUrl(baseUrl, '/v1/models'), {
         headers: { 'Authorization': `Bearer ${apiKey}` }
       });
 
@@ -141,20 +165,22 @@ export const OpenAIProvider = {
     const capabilities = { chat: false, responses: false };
 
     try {
-      const response = await fetchWithTimeout(`${baseUrl}/v1/chat/completions`, {
+      const chatUrl = buildUrl(baseUrl, '/v1/chat/completions');
+      const response = await fetchWithTimeout(chatUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'gpt-3.5-turbo',
+          model: '_test_',
           messages: [{ role: 'user', content: 'test' }],
           max_tokens: 1
         })
       }, 10000);
 
-      if (response.ok || response.status === 400) {
+      // 200/400/401/404 都说明端点存在（400=模型不对，401=key问题，404=模型不存在）
+      if (response.ok || response.status === 400 || response.status === 404) {
         capabilities.chat = true;
       }
     } catch (error) {
@@ -171,10 +197,10 @@ export const OpenAIProvider = {
     if (customEndpoint) {
       endpoint = customEndpoint.startsWith('/') ? customEndpoint : `/${customEndpoint}`;
     } else {
-      endpoint = apiType === 'responses' ? '/responses' : '/v1/chat/completions';
+      endpoint = apiType === 'responses' ? '/v1/responses' : '/v1/chat/completions';
     }
 
-    const requestUrl = `${baseUrl}${endpoint}`;
+    const requestUrl = buildUrl(baseUrl, endpoint);
     const requestBody = buildRequestBody(endpoint, { model, messages, temperature, maxTokens, stream });
     
     if (logCallback) {
@@ -249,9 +275,10 @@ export const OpenAIProvider = {
     if (customEndpoint) {
       endpoint = customEndpoint.startsWith('/') ? customEndpoint : `/${customEndpoint}`;
     } else {
-      endpoint = apiType === 'responses' ? '/responses' : '/v1/chat/completions';
+      endpoint = apiType === 'responses' ? '/v1/responses' : '/v1/chat/completions';
     }
 
+    const requestUrl = buildUrl(baseUrl, endpoint);
     const messages = [{ role: 'user', content: 'Say hello in one word' }];
     const isCodex = model.toLowerCase().includes('codex');
     const requestBody = buildRequestBody(endpoint, {
@@ -263,7 +290,7 @@ export const OpenAIProvider = {
     });
     
     try {
-      const response = await fetchWithTimeout(`${baseUrl}${endpoint}`, {
+      const response = await fetchWithTimeout(requestUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,

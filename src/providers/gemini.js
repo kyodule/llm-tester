@@ -1,4 +1,4 @@
-import { fetchWithTimeout, measureLatency } from '../utils.js';
+import { fetchWithTimeout, measureLatency, normalizeBaseUrl } from '../utils.js';
 
 export const GeminiProvider = {
   name: 'gemini',
@@ -6,7 +6,8 @@ export const GeminiProvider = {
   async validate(baseUrl, apiKey) {
     const startTime = Date.now();
     try {
-      const response = await fetchWithTimeout(`${baseUrl}/v1beta/models?key=${apiKey}`, {
+      const base = normalizeBaseUrl(baseUrl);
+      const response = await fetchWithTimeout(`${base}/v1beta/models?key=${apiKey}`, {
         headers: { 'Content-Type': 'application/json' }
       });
 
@@ -33,7 +34,8 @@ export const GeminiProvider = {
 
   async listModels(baseUrl, apiKey) {
     try {
-      const response = await fetchWithTimeout(`${baseUrl}/v1beta/models?key=${apiKey}`, {
+      const base = normalizeBaseUrl(baseUrl);
+      const response = await fetchWithTimeout(`${base}/v1beta/models?key=${apiKey}`, {
         headers: { 'Content-Type': 'application/json' }
       });
 
@@ -62,8 +64,9 @@ export const GeminiProvider = {
       parts: [{ text: msg.content }]
     }));
 
+    const base = normalizeBaseUrl(baseUrl);
     const response = await fetchWithTimeout(
-      `${baseUrl}/v1beta/models/${model}:streamGenerateContent?key=${apiKey}&alt=sse`,
+      `${base}/v1beta/models/${model}:streamGenerateContent?key=${apiKey}&alt=sse`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -108,8 +111,9 @@ export const GeminiProvider = {
   async testModel(baseUrl, apiKey, model) {
     const startTime = Date.now();
     try {
+      const base = normalizeBaseUrl(baseUrl);
       const response = await fetchWithTimeout(
-        `${baseUrl}/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        `${base}/v1beta/models/${model}:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

@@ -1,4 +1,4 @@
-import { fetchWithTimeout, measureLatency } from '../utils.js';
+import { fetchWithTimeout, measureLatency, buildUrl } from '../utils.js';
 
 export const AnthropicProvider = {
   name: 'anthropic',
@@ -6,7 +6,7 @@ export const AnthropicProvider = {
   async validate(baseUrl, apiKey) {
     const startTime = Date.now();
     try {
-      const response = await fetchWithTimeout(`${baseUrl}/v1/messages`, {
+      const response = await fetchWithTimeout(buildUrl(baseUrl, '/v1/messages'), {
         method: 'POST',
         headers: {
           'x-api-key': apiKey,
@@ -58,7 +58,7 @@ export const AnthropicProvider = {
   async *chat(config) {
     const { baseUrl, apiKey, model, messages, temperature = 0.7, maxTokens = 1000 } = config;
 
-    const response = await fetchWithTimeout(`${baseUrl}/v1/messages`, {
+    const response = await fetchWithTimeout(buildUrl(baseUrl, '/v1/messages'), {
       method: 'POST',
       headers: {
         'x-api-key': apiKey,
@@ -107,7 +107,7 @@ export const AnthropicProvider = {
   async testModel(baseUrl, apiKey, model) {
     const startTime = Date.now();
     try {
-      const response = await fetchWithTimeout(`${baseUrl}/v1/messages`, {
+      const response = await fetchWithTimeout(buildUrl(baseUrl, '/v1/messages'), {
         method: 'POST',
         headers: {
           'x-api-key': apiKey,
